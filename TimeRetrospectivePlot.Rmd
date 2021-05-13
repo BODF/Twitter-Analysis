@@ -1,0 +1,123 @@
+---
+title: "Time Series Plot of Sake Trends"
+author: "Jordan White"
+date: "9/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidytext)
+library(dplyr)
+library(tidyr)
+```
+
+## Goal
+
+* Make a plot of sake-related hashtag-usage over the years on Twitter.
+
+## Preprocessing that will be needed  
+Some tweets are not actually sake-related and need to be removed.
+
+## Convert data, tally it, make a plot  
+
+
+```{r DateBinning}
+data <- read_csv("<FILE>")
+
+# cut will bin for every month here
+# 
+# splinter <- split(data$timestamp, format(data$timestamp, "%Y-%m"))
+# ym <- as.Date(sapply(names(splinter), paste, "-01", sep = ""))
+# names(ym) <- NULL
+# year_sum <- sapply(splinter, length)
+# names(year_sum) <- NULL
+# 
+# plot(ym, year_sum
+#      ,type='l'
+#      ,xlab = "Date", ylab = "Number of Tweets")
+
+```
+
+## Now break the data up by hashtag to see the rise of each hashtag
+
+```{r Hashtag}
+# Use grep to find tweets with each hashtag, subset on these logical vectors
+kampai <- grepl("[kK]a[nm]pai", data$text)
+sake <- grepl("[sS]ake", data$text)
+nihonshu <- grepl("[nN]ihonshu", data$text)
+#brewers <- grepl("[sS]akebrewersassociation", data_tweets$text)# zero hits
+drinksake <- grepl("[dD]rinksake|saketasting", data$text)
+#craftsake<-grepl("[cC]raftsake",data_tweets$text) #has total overlap with sake
+sakestagram <- grepl("sakestagram|sakegram", data$text)
+nihonshu_jp <- grepl("日本酒|清酒", data$text)
+
+# Subset the original data, here is a functionalization of it
+time_tally <- function(subset_group, data = data){
+        input <- data$timestamp[subset_group]
+        splinter <- split(input, format(input, "%Y-%m"))
+        ym <- as.Date(
+                sapply(names(splinter), paste, "-01", sep = "")
+                )
+        names(ym) <- NULL # clear the unneccessary names, prevent graph errors
+        
+        year_sum <- sapply(splinter, length)
+        names(year_sum) <- NULL
+        
+        time_span <- tibble("Tally" = year_sum, "Time" = ym)
+        return(time_span)
+}
+
+# apply
+nihonshu_time <- time_tally(nihonshu, data)
+nihonshu_jp_time <- time_tally(nihonshu_jp, data)
+sake_time <- time_tally(sake, data)
+kampai_time <- time_tally(kampai, data)
+sakestagram_time <- time_tally(sakestagram, data)
+drinksake_time <- time_tally(drinksake, data)
+all_time <- time_tally(1:dim(data)[1], data)
+
+# join all data sets together
+time_frame <- left_join(all_time, sake_time
+                        ,by = "Time", suffix = c("All", "Sake")) %>%
+        left_join(nihonshu_time, by = "Time") %>%
+        left_join(nihonshu_jp_time, by = "Time"
+                  ,suffix = c("Nihonshu", "Nih_JP")) %>%
+        left_join(kampai_time, by = "Time") %>%
+        left_join(drinksake_time, by = "Time"
+                  ,suffix = c("Kampai", "Drink")) %>%
+        left_join(sakestagram_time, by = "Time") %>%
+        rename(Instagram = Tally)
+
+
+p <- plot_ly(data = time_frame, x = ~Time,y = ~TallyAll
+             ,name="Sum", mode = 'lines', type = "scatter") %>%
+        add_trace(y = ~TallySake, name="#sake", mode ='lines')%>%
+        add_trace(y = ~TallyNihonshu, name="#nihonshu", mode='lines')%>%
+        add_trace(y = ~TallyNih_JP, name="#日本酒/#清酒", mode='lines')%>%
+        add_trace(y = ~TallyKampai, name="#kampai/#kanpai", mode='lines')%>%
+        add_trace(y = ~TallyDrink
+                  ,name="#drinksake/#saketasting", mode='lines') %>%
+        add_trace(y = ~Instagram, name="#sakegram/#sakestagram"
+                  ,mode = 'lines') %>%
+        layout(title = "Sum of Saké Related Tweets by Month"
+               ,xaxis = list(title = "")
+               ,yaxis = list(title = "Number of Tweets"))
+
+# plot(all_time$Time, all_time$Tally
+#      ,type='l'
+#      ,xlab = "Date", ylab = "Number of Tweets")
+# points(nihonshu_jp_time$Time, nihonshu_jp_time$Tally
+#        ,type = 'l', col = "red")
+# points(nihonshu_time$Time, nihonshu_time$Tally
+#        ,type = 'l', col = "blue")
+# points(sake_time$Time, sake_time$Tally
+#        ,type = 'l', col = "orange")
+# points(drinksake_time$Time, drinksake_time$Tally
+#        ,type = 'l', col = "purple")
+# points(sakestagram_time$Time, sakestagram_time$Tally
+#        ,type = 'l', col = "green")
+# points(kampai_time$Time, kampai_time$Tally
+#        ,type = 'l', col = "cyan")
+```
