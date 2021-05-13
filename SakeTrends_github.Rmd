@@ -1,8 +1,8 @@
 ---
-title: "Sake Trends on Twitter"
+title: "SakeTrends_github"
 author: "Jordan White"
-date: "7/1/2019"
-output: html_document
+date: "5/13/2021"
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -25,10 +25,10 @@ library(htmltools)
 library(jsonlite)
 
 # Set up twitteR
-consumer_key <- # You need these from your own account
-consumer_secret <- #
-access_token <- #
-access_secret <- #
+consumer_key <- "" # Fill in with your own
+consumer_secret <- ""
+access_token <- ""
+access_secret <- ""
 
 setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
 
@@ -36,8 +36,6 @@ setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
 # tw <- searchTwitter("#sake", n = 3, lang = 'en') # pulls "sake" hash tag
 # d <- twListToDF(tw) # converts above to a data frame listing attributes
 ```
-Quick Note: This is a truncation of a much longer Rmd file. The contents here 
-lay out some of the initial steps to my analyses.
 
 ## Goals  
 The main goal here is to see how saké as a hash tag has developed over time. 
@@ -46,30 +44,26 @@ look at how it has changed over time in specific locations. Here's a list of
 goals:
 
 *  Use a simple search that is language blind or English specific and find out 
-how often #sake has been used over time. 
+how often #sake has been used over time.
 *  Narrow the search down to those tweets originating in the US, CAN, or MEX. 
+Maybe set rough limits on where Latitude and Longitude are cut off.
 *  Plot the above North American tweets against the continental layout. Perhaps 
 make it an interactive map that plots by year.
 
-### Requirements  
-* A file containing tweets you have collected
-* A separate file containing the associated users and their metadata, collected 
-by twitteR
-* A Japanese stopwords file
+## Approach  
+Let's start with some small steps because these datasets could balloon quickly 
+and kill my computer.
 
-### Contents  
-* Code for extracting user location from data output by twitteR package
-* Geocoding: grabs any (lat, lon) data already in the metadata of user profiles
-* Text mining of tweets: initial parsing including removal of stopwords and 
-subsetting to remove some bycatch (Muslims tweeting #sake and meaning "for the 
-sake of Allah", they probably are not drinking saké)
-* Code for a wordcloud and the associated set up: reformatting of some words for 
-pretty display and deletion of uninteresting words (numbers etc)
+*  First search for English language #sake tweets in the past year. Try grabbing 
+the max number possible.
+*  If that's not too bad, expand to a longer time frame.
+*  If good, see how the number of #sake tweets in English compares to a language 
+blind search.
 
 ```{r GetUserLocation}
 # Use with twitteR to grab user info
-# Note: I noticed a HTTP 403 error for some sets of requests if the request was  
-# about 100 users in size. Try scanning with 50 users and imposing a 2 sec rest 
+# I noticed a HTTP 403 error for some sets of requests if the request was about 
+# 100 users in size. I'll try scanning with 50 users and imposing a 2 sec rest 
 # in between calls to prevent network overload.
 setwd("~/Documents/Sake_Brewing/")
 users <- read.csv("users20190705.csv")
@@ -110,6 +104,7 @@ empty <- grepl("^\\b$", extract_locations) # finds empty strings
 extract_locations[empty] <- NA
 
 rm(user_data, locations)
+
 ```
 
 ```{r Geocoding}
@@ -117,7 +112,7 @@ rm(user_data, locations)
 # This will give me more accurate info and avoids errors of Google geocoding
 search_key <- "\\d{1,2}\\.\\d{2,6}[,\\s\t]-{0,1}\\d{1,3}\\.\\d{2,6}$"
 matches <- grepl(search_key, extract_locations)
-#     Explanation of above RegEx: find at least one digit, then period, then
+#     Explanation of above: find at least one digit, then period, then
 #     two to six digits, a separator, followed by zero or one negative...
 
 # To extract matches or lat lng:
@@ -132,7 +127,6 @@ new_users_frame["lng"] <- NA
 new_users_frame$lat[matches] <- str_extract(extract_locations[matches]
                                             ,"-{0,1}\\d+.\\d+")
 # grabs the first digit and neg. if needed
-
 new_users_frame$lng[matches] <- str_extract(extract_locations[matches]
                                             ,"-{0,1}\\d+.\\d+$")
 # grabs the second digit and neg. if needed
@@ -140,6 +134,10 @@ new_users_frame$lng[matches] <- str_extract(extract_locations[matches]
 new_users_frame <- new_users_frame %>%
   mutate(lat = as.numeric(lat), lng = as.numeric(lng))
 #ignore warning, it NA's one value that shouldn't have been grabbed
+
+##### Make an overall users data frame, subset on Country field to see
+# what is geocoded
+
 ```
 
 ```{r LoadData}
@@ -200,6 +198,9 @@ unigrams_all <- data %>% count(words, sort = TRUE)
 unigrams_eng <- eng_data %>% count(words, sort = TRUE)
 ```
 
+
+## Some plots!
+
 ```{r Wordclouds}
 # remove some ugly words for the cloud
 excission_list <- c("p", "w", "https", "http", "www.instagram.com",
@@ -246,4 +247,183 @@ wordcloud(abridged_all_counts$words, abridged_all_counts$n,
           colors = RColorBrewer::brewer.pal(9, "RdPu")[6:9],
           random.order = FALSE)
 #dev.off()
+```
+
+```{r Leaflet}
+# get locations of users in scraped tweets and plot on a tile map
+
+# some users have multiple locations listed, only the first one is matched by
+# google. Others have fanciful locations that may or may not match an actual 
+# building and it is hard to tell if it is an intended user location or farce.
+# At least one user seems to be broadcasting their exact geo location, and it
+# may be a jet crew, so while exact at the time accessed, it likely isn't now.
+# Some locations have outright been geo-coded wrong, ex. "Tokyo" became a store 
+# in Pittsburg, KS, USA
+lat_lng_data <- read.csv("Users-LatLng-20190711.csv")
+complete_lat_lng <- lat_lng_data[!is.na(lat_lng_data$lat),] #74245 values
+complete_lat_lng <- complete_lat_lng[!is.na(complete_lat_lng$Location),] # 1514 values
+
+# remove muslim users, this list is from the text analysis, above
+complete_lat_lng <- 
+        complete_lat_lng[!(complete_lat_lng$User %in% muslim_users$user),]
+
+# reformat, remove 1 value that doesn't reference the USA but got assigned it
+# anyway. Also remove a weird case for a shop in Kansas.
+obscure_locations <- c("Warzone Cashmere Asia", "Roma", "All around the world"
+        ,"iPhone", "lost", "PH", "Earth", "Hail", "Where I Am"
+        ,"Shop the best for less","mx", "The Web", "Internet", "Worldwide"
+        ,"Home", "world", "World", "global"
+        ,"Global", "Aa - Ad", "92", "youtube!!!!", "Where the beer is."
+        ,"herts", "nowhere", "in transit", "Everywhere"
+        ,"15 minutes of fame", "Above all", "On the moon", "moon")
+
+not_USA <- !grepl("United|US|USA|America|U.S.|U.S.A.|United States of America|UNITED STATES OF AMERICA"
+                    ,User_Data$Location)
+geocode_USA <- User_Data$formatted_address == "United States"
+Compound <- !(not_USA & geocode_USA)
+
+complete_lat_lng <- as_tibble(complete_lat_lng) %>%
+        mutate(User = as.character(User), 
+           Location = as.character(Location), 
+           formatted_address = as.character(formatted_address)) %>%
+        filter(Compound) %>%
+        filter(!(formatted_address == 
+                     "2609D N Broadway St, Pittsburg, KS 66762, USA")) %>%
+        filter(!(Location %in% obscure_locations))
+
+# Individual Corrections
+complete_lat_lng[complete_lat_lng$User == "PTAlanSwann",] <- 
+        c("PTAlanSwann","UK","London, UK",51.507351,-0.1277583,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "TYKUSake",] <- 
+        c("TYKUSake","Nara, Japan","Nara, Japan",34.6851,135.8048,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "ElizabethAmy__",] <- 
+        c("ElizabethAmy__","Central Valley, CA","Central Valley, CA, USA",40.1999,122.2011,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "QUBALA",] <- 
+        c("QUBALA","Japan","Japan",36.2048,138.2529,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "wnkkny",] <- 
+        c("wnkkny","Japan","Japan",36.2048,138.2529,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "on1on",] <- 
+        c("on1on","Japan","Japan",36.2048,138.2529,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "MBEVScottPaine",] <- 
+        c("MBEVScottPaine","Bristol UK","Bristol, UK",51.4545,2.5879,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "mkarri0",] <- 
+        c("mkarri0","las Vegas, NV, USA","las Vegas, NV, USA",36.1699,115.1398,"APPROXIMATE")
+complete_lat_lng[complete_lat_lng$User == "kimjun4649",] <- 
+        c("kimjun4649","Sapporo, Japan","Sapporo, Japan",43.0618,141.3545,"APPROXIMATE")
+
+complete_lat_lng <- complete_lat_lng %>%
+        mutate(lat = as.double(lat), 
+           lng = as.double(lng))
+
+# separate semi-accurate geocoding (address or city level) from country level info
+countries <- rep("Country", dim(complete_lat_lng)[1])
+for(i in 1:dim(complete_lat_lng)[1]){
+        buffer = str_trim(
+                str_split(complete_lat_lng$formatted_address[i], ",")[[1]]
+                ,"left")
+        countries[i] <- buffer[length(buffer)]
+}
+complete_lat_lng$Country <- countries
+
+## fix a few weird international addresses with country first
+complete_lat_lng[complete_lat_lng$Country == "100089","Country"] <- "China"
+complete_lat_lng[grepl("千葉市美浜区ひび野2-116 Chiba Prefecture Makuhari Seaside Park|西村ビルB1|1 Chome−11−３ 三 全 ビル 2F|4 Chome−2−１０ 仙台東映プラザ 1&2F|4-chōme−10−１１ ＦＲＫビル3F|13−１１ 寿し 忠 ビル 1F",complete_lat_lng$Country),"Country"] <- "Japan"
+complete_lat_lng[complete_lat_lng$Country == "Taiwan 800","Country"] <- "Taiwan"
+
+## fix Country names
+complete_lat_lng[grepl("Hong Kong", complete_lat_lng$Country),"Country"] <-
+        "China" # my map doesn't make the distinction
+complete_lat_lng[grepl("US|United States|Guam"
+                       , complete_lat_lng$Country),"Country"] <-
+        "United States of America"
+complete_lat_lng[grepl("Serbia", complete_lat_lng$Country),"Country"] <-
+        "Republic of Serbia"
+complete_lat_lng[grepl("Singapore", complete_lat_lng$Country),"Country"] <-
+        "Malaysia"
+complete_lat_lng[grepl("Isle of Man|UK", complete_lat_lng$Country),"Country"] <-
+        "United Kingdom"
+
+complete_lat_lng <- complete_lat_lng[!(grepl("Asia|Europe", complete_lat_lng$Country)),]
+
+# split one bit of data off for looking at users in specific cities
+city_specific <- complete_lat_lng[str_trim(complete_lat_lng$Location) != complete_lat_lng$Country,]
+
+
+###################################MAPS#################################
+
+# Where are the unique users that can be specifically localized?
+# Below commented code gives a simple map
+# leaflet() %>%
+#         addTiles() %>%
+#         addCircleMarkers(lat=city_specific$lat, lng=city_specific$lng, 
+#                    color = "#00000060", radius=1)
+
+# How many users total per country?
+country_count <- summary(as.factor(complete_lat_lng$Country))
+countries <- data.frame("Countries" = names(country_count)
+                        , "Count" = country_count
+                        , stringsAsFactors = FALSE)
+WorldCountry <-geojsonio::geojson_read("./world.geo.json/countries.geo.json"
+                                       , what = "sp")
+
+# build map of countries
+data_Map <- WorldCountry[WorldCountry$name %in% names(country_count), ]
+reordered_countries <- data.frame("Countries" = rep("Empty", 61), "Count" = rep("Empty", 61), stringsAsFactors = FALSE)
+
+for(element in countries$Countries){
+    reordering = which(data_Map$name == element)
+    reordered_countries[reordering,] <- countries[countries$Countries == element,]
+}
+
+rm(countries)
+
+reordered_countries$Count <- as.numeric(reordered_countries$Count)
+
+
+# set palette and labels
+pal <- colorBin("YlGnBu", domain = reordered_countries$Count
+                ,bins = c(0,1,4,16,48,192,471))
+labels <- sprintf(
+  "<strong>%s</strong><br/>%g #saké tweeter(s) <sup></sup>",
+  names(country_count), country_count) %>% lapply(htmltools::HTML)
+
+# base map and add country elements to base map
+Map <- leaflet(data_Map) %>% addTiles() %>% addPolygons()
+Map %>% addPolygons(
+    fillColor = ~pal(reordered_countries$Count),
+    weight = 1,
+    opacity = 1,
+    color = 'black',
+    dashArray = '1',
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+        weight = 5,
+        color = "#666",
+        dashArray = "",
+        fillOpacity = 0.7,
+        bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+        style = list("font-weight" = "normal", padding = "3px 8px"),
+        textsize = "15px",
+        direction = "auto")
+)
+
+leaflet() %>%
+        addTiles() %>%
+        addCircleMarkers(lat=complete_lat_lng$lat, lng=complete_lat_lng$lng, 
+                   color = "#00000060", radius=1)
+
+# States Maps (to be developed?)
+## import geojson map
+# states <- geojsonio::geojson_read("us-states-geo.json", what = "sp")
+
+# get a dictionary for converting between state name and abbreviation
+# needed because the addresses are abbreviated, but geojson is not
+# state_dictionary <- read_json("states-dictionary.json")
+
+# grab state data from the addresses in US, then convert to match geojson
+
+
+# build maps
 ```
